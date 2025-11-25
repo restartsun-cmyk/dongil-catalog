@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 철물 카탈로그</title>
+    <style>
+        /* 스타일은 기존과 동일합니다 */
+        :root { --main-color: #2c3e50; --accent-color: #e74c3c; --bg-color: #f4f6f7; }
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: var(--bg-color); margin: 0; padding: 0; }
+        
+        header { background-color: var(--main-color); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { margin: 0; font-size: 1.2rem; }
+        
+        .mode-switch { background: none; border: 1px solid white; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; cursor: pointer; }
+        .mode-active { background-color: var(--accent-color); border-color: var(--accent-color); }
+
+        .container { padding: 10px; max-width: 800px; margin: 0 auto; }
+        .product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100%, 1fr)); gap: 15px; }
+        
+        .card { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; }
+        .card-img { width: 100px; height: 100px; background-color: #ddd; object-fit: cover; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #666; font-size: 0.8rem;}
+        .card-body { padding: 10px; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; }
+        
+        .cat-badge { font-size: 0.7rem; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px; align-self: flex-start; margin-bottom: 5px;}
+        .p-name { font-weight: bold; font-size: 1.1rem; margin: 0; color: #333; }
+        .p-spec { font-size: 0.9rem; color: #555; margin-top: 2px; }
+        .p-box { font-size: 0.8rem; color: #888; margin-top: 2px; }
+
+        .price-area { margin-top: 8px; text-align: right; }
+        .price-consumer { font-weight: bold; color: #333; }
+        .price-dealer { display: none; color: var(--accent-color); font-weight: bold; font-size: 1.1rem; }
+        
+        body.consult-mode .price-dealer { display: block; }
+        body.consult-mode .price-consumer { text-decoration: line-through; color: #999; font-size: 0.8rem; }
+        body.consult-mode .dealer-label { display: inline-block; font-size: 0.7rem; background: var(--accent-color); color: white; padding: 2px 4px; border-radius: 3px; margin-right: 5px;}
+        
+        /* 에러 메시지 스타일 */
+        .error-box { background: #fee; color: #c00; padding: 15px; border-radius: 5px; font-size: 0.9rem; line-height: 1.4; border: 1px solid #fcc; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🔧 우리철물 카탈로그</h1>
+    <button id="modeBtn" class="mode-switch" onclick="toggleMode()">🔒 고객용</button>
+</header>
+
+<div class="container">
+    <div id="productList" class="product-list">
+        <div style="text-align:center; padding: 20px;">데이터를 불러오는 중...</div>
+    </div>
+</div>
+
+<script>
+    // [해결책] 마스터의 구글 시트 주소를 'CORS 우회 서버(AllOrigins)'를 통해 거쳐오도록 수정했습니다.
+    // 이렇게 하면 로컬 파일에서도 안전하게 데이터를 가져옵니다.
+    const ORIGINAL_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTks8AtO1044gxBtvCP7SU70ftGdrQhEWXxvfykM9MYcOwRsVXE9TkIeJuosxaY29-03dUtNZ6D6zms/pub?gid=0&single=true&output=csv";
+    const PROXY_URL = "https://api.allorigins.win/raw?url=" + encodeURIComponent(ORIGINAL_URL);
+
+    async function loadData() {
+        try {
+            // PROXY_URL을 사용하여 데이터를 요청합니다.
+            const response = await fetch(PROXY_URL);
+            
+            if (!response.ok) throw new Error("네트워크 응답이 올바르지 않습니다.");
+            
+            const data = await response.text();
+            
+            // 데이터가 비어있는지 확인
+            if(!data || data.length < 10) throw new Error("데이터를 가져왔으나 내용이 비어있습니다.");
+
+            const rows = data.split('\n').slice(1); 
+            const listDiv = document.getElementById('productList');
+            listDiv.innerHTML = ""; 
+
+            let count = 0;
+            rows.forEach(row => {
+                // 쉼표 처리 로직
+                const cols = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+                const cleanCols = cols.map(c => c.replace(/^"|"$/g, '').trim()); 
+
+                if(cleanCols.length < 2) return; 
+
+                const item = {
+                    cat: cleanCols[0],
+                    name: cleanCols[1],
+                    spec: cleanCols[2],
+                    box: cleanCols[3],
+                    img: cleanCols[4],
+                    p_dealer: cleanCols[5], 
+                    p_ref: cleanCols[7]     
+                };
+
+                const imgDisplay = (item.img && item.img.startsWith('http')) 
+                    ? `<img src="${item.img}" class="card-img">` 
+                    : `<div class="card-img">이미지<br>준비중</div>`;
+                
+                const cardHtml = `
+                    <div class="card">
+                        ${imgDisplay}
+                        <div class="card-body">
+                            <div class="cat-badge">${item.cat}</div>
+                            <h3 class="p-name">${item.name}</h3>
+                            <div class="p-spec">${item.spec}</div>
+                            <div class="p-box">📦 ${item.box}</div>
+                            <div class="price-area">
+                                <div class="price-consumer">권장가: ${formatMoney(item.p_ref)}</div>
+                                <div class="price-dealer"><span class="dealer-label">도매</span> ${formatMoney(item.p_dealer)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                listDiv.innerHTML += cardHtml;
+                count++;
+            });
+
+            if(count === 0) listDiv.innerHTML = "<div style='text-align:center'>표시할 상품이 없습니다.</div>";
+
+        } catch (error) {
+            console.error(error);
+            // 에러가 나면 정확한 이유를 화면에 보여줍니다.
+            document.getElementById('productList').innerHTML = `
+                <div class="error-box">
+                    <strong>⚠️ 오류 발생</strong><br>
+                    ${error.message}<br><br>
+                    혹시 구글 시트 '웹에 게시'가 중단되었거나, 인터넷 연결을 확인해주세요.
+                </div>`;
+        }
+    }
+
+    function formatMoney(str) {
+        if(!str) return "문의";
+        return Number(String(str).replace(/[^0-9]/g,'')).toLocaleString() + "원";
+    }
+
+    function toggleMode() {
+        const body = document.body;
+        const btn = document.getElementById('modeBtn');
+        body.classList.toggle('consult-mode');
+        
+        if (body.classList.contains('consult-mode')) {
+            btn.textContent = "🔓 상담용";
+            btn.classList.add('mode-active');
+        } else {
+            btn.textContent = "🔒 고객용";
+            btn.classList.remove('mode-active');
+        }
+    }
+
+    loadData();
+</script>
+
+</body>
+</html>
